@@ -19,10 +19,20 @@ window.onload = function() {
     localConnection.addTransceiver('video', {'direction': 'recvonly'})
 
     localConnection.createOffer().then(offer => {
-        localConnection.setLocalDescription(offer);
-        console.log("Offer set");
-        document.getElementById("start").disabled = false;
+        localConnection.setLocalDescription(offer).then(()=>{
+            console.log("Offer set");
+            document.getElementById("start").disabled = false;
+
+        }).catch(e=>{
+            console.log("Error: "+e);
+        });
     })
+    // close connection on unload
+    window.onbeforeunload = async function () {
+        localConnection.close();
+        localConnection = null;
+        console.log("here");
+    }
     document.getElementById("start").addEventListener("click", function() {
         console.log("Clicked button")
         // send offer

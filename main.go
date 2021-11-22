@@ -16,7 +16,7 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
-var stopped chan bool = make(chan bool)
+var stopped chan bool = make(chan bool, 1)
 var localSDP *webrtc.SessionDescription = nil
 var remoteSDP chan webrtc.SessionDescription = make(chan webrtc.SessionDescription, 1)
 
@@ -52,17 +52,24 @@ func serve(port string) {
 			}
 			w.Write(data)
 			fmt.Println("Told client sdp")
+			// empty for next client, not the best way but works
+			localSDP = nil
 		}
 
 	})
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
+func rtcServer() {
+	// Manage starting RTC connections and restarted connections
 
+	// run until stopped
+	for len(stopped) == 0 {
+		fmt.Println("running --- ---- ---- ")
+		start_backend()
+	}
+}
 func start_backend() {
 	// send stop signal if exit
-	defer func() {
-		stopped <- true
-	}()
 	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
@@ -106,14 +113,19 @@ func start_backend() {
 		}
 	}()
 
+	var running bool = true
 	// ICE handler
 	peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		fmt.Println("Connection state changed: " + state.String())
-		if state == webrtc.ICEConnectionStateFailed {
+		switch state {
+		case webrtc.ICEConnectionStateFailed:
 			if err := peerConnection.Close(); err != nil {
 				panic(err)
 			}
+		case webrtc.ICEConnectionStateDisconnected:
+			running = false
 		}
+
 	})
 	// get offer
 	offer := <-remoteSDP
@@ -138,7 +150,7 @@ func start_backend() {
 	localSDP = peerConnection.LocalDescription()
 	// send RTP packets forever
 	inboundRTPPacket := make([]byte, 1600)
-	for {
+	for running {
 		n, _, err := listener.ReadFrom(inboundRTPPacket)
 		if err != nil {
 			panic(fmt.Sprintf("error during read: %s", err))
@@ -157,7 +169,7 @@ func start_backend() {
 
 func main() {
 	go serve(":8080")
-	go start_backend()
+	go rtcServer()
 	fmt.Println("started")
 	<-stopped
 }
