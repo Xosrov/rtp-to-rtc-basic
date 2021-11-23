@@ -8,10 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/pion/webrtc/v3"
@@ -22,45 +20,6 @@ var localSDP *webrtc.SessionDescription = nil
 var remoteSDP chan webrtc.SessionDescription = make(chan webrtc.SessionDescription, 1)
 
 func serve(port string) {
-	// send stop signal if exit
-	defer func() {
-		stopped <- true
-	}()
-	// start the front-end serving and receiving
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, r.URL.Path[1:])
-	})
-	http.HandleFunc("/sdp", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			decoder := json.NewDecoder(r.Body)
-			answer := webrtc.SessionDescription{}
-			decoder.Decode(&answer)
-			select {
-			case remoteSDP <- answer:
-			default:
-				fmt.Println("Channel is still not emptied, disregarding new request")
-			}
-			fmt.Println("Got client sdp")
-		} else if r.Method == "GET" {
-			// wait for local sdp to be ready
-			for localSDP == nil {
-				time.Sleep(time.Second / 2)
-			}
-			w.Header().Add("Content-Type", "application/json")
-			data, err := json.Marshal(*localSDP)
-			if err != nil {
-				panic(err)
-			}
-			w.Write(data)
-			fmt.Println("Told client sdp")
-			// empty for next client, not the best way but works
-			localSDP = nil
-		}
-
-	})
-	log.Fatal(http.ListenAndServe(":8080", nil))
-}
-func new_serve(port string) {
 	router := gin.Default()
 	router.Static("/static", "./view")
 	router.LoadHTMLGlob("view/html/*")
@@ -199,7 +158,7 @@ func start_backend() {
 }
 
 func main() {
-	go new_serve(":8080")
+	go serve(":8080")
 	go rtcServer()
 	fmt.Println("started")
 	<-stopped
