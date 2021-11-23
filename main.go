@@ -112,6 +112,7 @@ func start_backend() {
 			if err := peerConnection.Close(); err != nil {
 				panic(err)
 			}
+			running = false
 		case webrtc.ICEConnectionStateDisconnected:
 			running = false
 		}
