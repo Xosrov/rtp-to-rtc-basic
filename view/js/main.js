@@ -12,6 +12,7 @@ window.onload = function() {
     const remoteVideo = document.getElementById('stream');
     remoteVideo.srcObject = stream;
     localConnection.ontrack = (event) => {
+        console.log(event.track.kind + " track received");
         stream.addTrack(event.track);
     }
     localConnection.oniceconnectionstatechange = e => console.log(localConnection.iceConnectionState);

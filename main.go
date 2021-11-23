@@ -70,34 +70,61 @@ func start_backend() {
 	if err != nil {
 		panic(err)
 	}
-	// UDP listener for RTP on port 5004
-	listener, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 5004})
+	// UDP video listener for RTP on port 5004
+	Vlistener, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 5004})
 	if err != nil {
 		panic(err)
 	}
-	// make sure listener is closed after done
+	// UDP audio listener for RTP on port 5005
+	Alistener, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 5005})
+	if err != nil {
+		panic(err)
+	}
+	// make sure listeners are closed after done
 	defer func() {
-		if err = listener.Close(); err != nil {
+		if err = Vlistener.Close(); err != nil {
+			panic(err)
+		}
+		if err = Alistener.Close(); err != nil {
 			panic(err)
 		}
 	}()
 
 	// video track
-	videoTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, "video", "testing")
+	videoTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8}, "video", "vid")
 	if err != nil {
 		panic(err)
 	}
-	// add track to lc
-
-	rtpSender, err := peerConnection.AddTrack(videoTrack)
+	// audio track
+	audioTrack, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus}, "audio", "aud")
 	if err != nil {
 		panic(err)
 	}
-	// keep reading from track unless error occurs
+	// add vide track to lc
+	rtpVSender, err := peerConnection.AddTrack(videoTrack)
+	if err != nil {
+		panic(err)
+	}
+	// add audio track to lc
+	rtpASender, err := peerConnection.AddTrack(audioTrack)
+	if err != nil {
+		panic(err)
+	}
+	// keep reading from tracks unless error occurs
+	// video
 	go func() {
 		rtcpBuffer := make([]byte, 1500)
 		for {
-			if _, _, err := rtpSender.Read(rtcpBuffer); err != nil {
+			if _, _, err := rtpVSender.Read(rtcpBuffer); err != nil {
+				return
+			}
+		}
+	}()
+	// audio
+	go func() {
+		rtcpBuffer := make([]byte, 1500)
+		for {
+			if _, _, err := rtpASender.Read(rtcpBuffer); err != nil {
 				return
 			}
 		}
@@ -112,7 +139,6 @@ func start_backend() {
 			if err := peerConnection.Close(); err != nil {
 				panic(err)
 			}
-			running = false
 		case webrtc.ICEConnectionStateDisconnected:
 			running = false
 		}
@@ -140,19 +166,29 @@ func start_backend() {
 	// set local sdp
 	localSDP = peerConnection.LocalDescription()
 	// send RTP packets forever
-	inboundRTPPacket := make([]byte, 1600)
+	inboundRTPVPacket := make([]byte, 1600)
+	inboundRTPAPacket := make([]byte, 1600)
 	for running {
-		n, _, err := listener.ReadFrom(inboundRTPPacket)
+		Vn, _, err := Vlistener.ReadFrom(inboundRTPVPacket)
 		if err != nil {
 			panic(fmt.Sprintf("error during read: %s", err))
 		}
-
-		if _, err = videoTrack.Write(inboundRTPPacket[:n]); err != nil {
+		An, _, err := Alistener.ReadFrom(inboundRTPAPacket)
+		if err != nil {
+			panic(fmt.Sprintf("error during read: %s", err))
+		}
+		if _, err = videoTrack.Write(inboundRTPVPacket[:Vn]); err != nil {
 			if errors.Is(err, io.ErrClosedPipe) {
 				// connection closed
 				return
 			}
-
+			panic(err)
+		}
+		if _, err = audioTrack.Write(inboundRTPAPacket[:An]); err != nil {
+			if errors.Is(err, io.ErrClosedPipe) {
+				// connection closed
+				return
+			}
 			panic(err)
 		}
 	}
