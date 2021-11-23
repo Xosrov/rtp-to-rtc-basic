@@ -31,29 +31,21 @@ window.onload = function() {
     window.onbeforeunload = async function () {
         localConnection.close();
         localConnection = null;
-        console.log("here");
     }
     document.getElementById("start").addEventListener("click", function() {
         console.log("Clicked button")
         // send offer
-        let postXhr = new XMLHttpRequest();
-        postXhr.open("POST", "/sdp", true);
-        postXhr.setRequestHeader("Content-type", "application/json");
         let offer = localConnection.localDescription;
-        postXhr.send(JSON.stringify({Type: offer.type, SDP: offer.sdp}));
-        postXhr.onload = function () {
+        axios.post("/sdp", {Type: offer.type, SDP: offer.sdp}).then(() => {
             console.log("Sent offer");
             // get answer
-            let getXhr = new XMLHttpRequest();
-            getXhr.open("GET", "/sdp", true);
-            getXhr.onload = function(){
-                let remoteDesc = new RTCSessionDescription(JSON.parse(this.response));
+            axios.get("/sdp").then(response=>{
+                let remoteDesc = new RTCSessionDescription(response.data);
                 localConnection.setRemoteDescription(remoteDesc).then(() => {
                     console.log("Set Answer");
                 });
-            }
-            getXhr.send();
-        }
+            })
+        })
     });
 
 }
