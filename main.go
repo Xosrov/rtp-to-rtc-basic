@@ -79,6 +79,15 @@ func new_serve(port string) {
 		fmt.Println("Got client sdp")
 		c.String(http.StatusOK, "OK")
 	})
+	router.GET("/sdp", func(c *gin.Context) {
+		// wait for local sdp to be ready
+		for localSDP == nil {
+		}
+		c.JSON(http.StatusOK, *localSDP)
+		fmt.Println("Telling client sdp")
+		// empty for next client, not the best way but works
+		localSDP = nil
+	})
 	router.Run(port)
 }
 func rtcServer() {
