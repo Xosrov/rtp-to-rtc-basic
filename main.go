@@ -62,6 +62,24 @@ func serve(port string) {
 }
 func new_serve(port string) {
 	router := gin.Default()
+	router.Static("/static", "./view")
+	router.LoadHTMLGlob("view/html/*")
+	router.GET("/", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "index.html", nil)
+	})
+	router.POST("/sdp", func(c *gin.Context) {
+		decoder := json.NewDecoder(c.Request.Body)
+		answer := webrtc.SessionDescription{}
+		decoder.Decode(&answer)
+		select {
+		case remoteSDP <- answer:
+		default:
+			fmt.Println("Channel is still not emptied, disregarding new request")
+		}
+		fmt.Println("Got client sdp")
+		c.String(http.StatusOK, "OK")
+	})
+	router.Run(port)
 }
 func rtcServer() {
 	// Manage starting RTC connections and restarted connections
@@ -172,7 +190,7 @@ func start_backend() {
 }
 
 func main() {
-	go serve(":8080")
+	go new_serve(":8080")
 	go rtcServer()
 	fmt.Println("started")
 	<-stopped
