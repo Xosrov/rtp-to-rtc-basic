@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -58,6 +59,9 @@ func serve(port string) {
 
 	})
 	log.Fatal(http.ListenAndServe(":8080", nil))
+}
+func new_serve(port string) {
+	router := gin.Default()
 }
 func rtcServer() {
 	// Manage starting RTC connections and restarted connections
