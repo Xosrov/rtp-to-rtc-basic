@@ -51,7 +51,6 @@ func serve(port string) {
 }
 func rtcServer() {
 	// Manage starting RTC connections and restarted connections
-
 	// run until stopped
 	for len(stopped) == 0 {
 		fmt.Println("running --- ---- ---- ")
@@ -139,6 +138,7 @@ func start_backend() {
 			if err := peerConnection.Close(); err != nil {
 				panic(err)
 			}
+			running = false
 		case webrtc.ICEConnectionStateDisconnected:
 			running = false
 		}
