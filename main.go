@@ -184,7 +184,7 @@ func start_backend() {
 	localSDP = peerConnection.LocalDescription()
 	// send RTP packets forever
 	vc := make(chan bool, 1)
-	ac := make(chan bool, 2)
+	ac := make(chan bool, 1)
 	go readPacket(videoTrack, Vlistener, &running, vc)
 	go readPacket(audioTrack, Alistener, &running, ac)
 	<-vc
