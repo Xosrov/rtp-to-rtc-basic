@@ -57,6 +57,22 @@ func rtcServer() {
 		start_backend()
 	}
 }
+func readPacket(Track *webrtc.TrackLocalStaticRTP, Listener *net.UDPConn) {
+	inboundRTPPacket := make([]byte, 1600)
+	for {
+		n, _, err := Listener.ReadFrom(inboundRTPPacket)
+		if err != nil {
+			panic(fmt.Sprintf("error during read: %s", err))
+		}
+		if _, err = Track.Write(inboundRTPPacket[:n]); err != nil {
+			if errors.Is(err, io.ErrClosedPipe) {
+				// connection closed
+				return
+			}
+			panic(err)
+		}
+	}
+}
 func start_backend() {
 	// send stop signal if exit
 	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{
@@ -129,7 +145,7 @@ func start_backend() {
 		}
 	}()
 
-	var running bool = true
+	stop := make(chan bool, 1)
 	// ICE handler
 	peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		fmt.Println("Connection state changed: " + state.String())
@@ -138,9 +154,9 @@ func start_backend() {
 			if err := peerConnection.Close(); err != nil {
 				panic(err)
 			}
-			running = false
+			stop <- true
 		case webrtc.ICEConnectionStateDisconnected:
-			running = false
+			stop <- true
 		}
 
 	})
@@ -166,32 +182,9 @@ func start_backend() {
 	// set local sdp
 	localSDP = peerConnection.LocalDescription()
 	// send RTP packets forever
-	inboundRTPVPacket := make([]byte, 1600)
-	inboundRTPAPacket := make([]byte, 1600)
-	for running {
-		Vn, _, err := Vlistener.ReadFrom(inboundRTPVPacket)
-		if err != nil {
-			panic(fmt.Sprintf("error during read: %s", err))
-		}
-		An, _, err := Alistener.ReadFrom(inboundRTPAPacket)
-		if err != nil {
-			panic(fmt.Sprintf("error during read: %s", err))
-		}
-		if _, err = videoTrack.Write(inboundRTPVPacket[:Vn]); err != nil {
-			if errors.Is(err, io.ErrClosedPipe) {
-				// connection closed
-				return
-			}
-			panic(err)
-		}
-		if _, err = audioTrack.Write(inboundRTPAPacket[:An]); err != nil {
-			if errors.Is(err, io.ErrClosedPipe) {
-				// connection closed
-				return
-			}
-			panic(err)
-		}
-	}
+	go readPacket(videoTrack, Vlistener)
+	go readPacket(audioTrack, Alistener)
+	<-stop
 }
 
 func main() {
