@@ -57,9 +57,9 @@ func rtcServer() {
 		start_backend()
 	}
 }
-func readPacket(Track *webrtc.TrackLocalStaticRTP, Listener *net.UDPConn) {
+func readPacket(Track *webrtc.TrackLocalStaticRTP, Listener *net.UDPConn, running *bool, res chan bool) {
 	inboundRTPPacket := make([]byte, 1600)
-	for {
+	for *running {
 		n, _, err := Listener.ReadFrom(inboundRTPPacket)
 		if err != nil {
 			panic(fmt.Sprintf("error during read: %s", err))
@@ -72,6 +72,7 @@ func readPacket(Track *webrtc.TrackLocalStaticRTP, Listener *net.UDPConn) {
 			panic(err)
 		}
 	}
+	res <- true
 }
 func start_backend() {
 	// send stop signal if exit
@@ -145,7 +146,7 @@ func start_backend() {
 		}
 	}()
 
-	stop := make(chan bool, 1)
+	running := true
 	// ICE handler
 	peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
 		fmt.Println("Connection state changed: " + state.String())
@@ -154,9 +155,9 @@ func start_backend() {
 			if err := peerConnection.Close(); err != nil {
 				panic(err)
 			}
-			stop <- true
+			running = false
 		case webrtc.ICEConnectionStateDisconnected:
-			stop <- true
+			running = false
 		}
 
 	})
@@ -182,9 +183,12 @@ func start_backend() {
 	// set local sdp
 	localSDP = peerConnection.LocalDescription()
 	// send RTP packets forever
-	go readPacket(videoTrack, Vlistener)
-	go readPacket(audioTrack, Alistener)
-	<-stop
+	vc := make(chan bool, 1)
+	ac := make(chan bool, 2)
+	go readPacket(videoTrack, Vlistener, &running, vc)
+	go readPacket(audioTrack, Alistener, &running, ac)
+	<-vc
+	<-ac
 }
 
 func main() {
