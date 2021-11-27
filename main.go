@@ -12,6 +12,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v3"
 )
 
@@ -20,6 +21,10 @@ var localSDP *webrtc.SessionDescription = nil
 var remoteSDP chan webrtc.SessionDescription = make(chan webrtc.SessionDescription, 1)
 
 func serve(port string) {
+	// stop if server exits
+	defer func() {
+		stopped <- true
+	}()
 	router := gin.Default()
 	router.Static("/static", "./view")
 	router.LoadHTMLGlob("view/html/*")
@@ -48,6 +53,38 @@ func serve(port string) {
 		localSDP = nil
 	})
 	router.Run(port)
+}
+
+var upgrader = websocket.Upgrader{}
+
+func start_websocket(c **gin.Context) {
+	sock, err := upgrader.Upgrade((*c).Writer, (*c).Request, nil)
+	if err != nil {
+		panic(err)
+	}
+	defer sock.Close()
+	for {
+		mtype, message, err := sock.ReadMessage()
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(mtype, message)
+	}
+}
+func new_serve(port string) {
+	defer func() {
+		stopped <- true
+	}()
+	router := gin.Default()
+	router.Static("/static", "./view")
+	router.LoadHTMLGlob("view/html/*")
+	router.GET("/", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "index.html", nil)
+	})
+	router.GET("/ws", func(c *gin.Context) {
+		start_websocket(&c)
+	})
+
 }
 func rtcServer() {
 	// Manage starting RTC connections and restarted connections
