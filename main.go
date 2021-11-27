@@ -16,62 +16,94 @@ import (
 	"github.com/pion/webrtc/v3"
 )
 
-var stopped chan bool = make(chan bool, 1)
-var localSDP *webrtc.SessionDescription = nil
-var remoteSDP chan webrtc.SessionDescription = make(chan webrtc.SessionDescription, 1)
+type MessageType uint
 
-func serve(port string) {
-	// stop if server exits
-	defer func() {
-		stopped <- true
-	}()
-	router := gin.Default()
-	router.Static("/static", "./view")
-	router.LoadHTMLGlob("view/html/*")
-	router.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "index.html", nil)
-	})
-	router.POST("/sdp", func(c *gin.Context) {
-		decoder := json.NewDecoder(c.Request.Body)
-		answer := webrtc.SessionDescription{}
-		decoder.Decode(&answer)
-		select {
-		case remoteSDP <- answer:
-		default:
-			fmt.Println("Channel is still not emptied, disregarding new request")
-		}
-		fmt.Println("Got client sdp")
-		c.String(http.StatusOK, "OK")
-	})
-	router.GET("/sdp", func(c *gin.Context) {
-		// wait for local sdp to be ready
-		for localSDP == nil {
-		}
-		c.JSON(http.StatusOK, *localSDP)
-		fmt.Println("Telling client sdp")
-		// empty for next client, not the best way but works
-		localSDP = nil
-	})
-	router.Run(port)
+const (
+	FAILED int = 0
+	OK     int = 1
+)
+const (
+	String       MessageType = iota // response is just a string
+	SDPJson                         // response is a webrtc.SessionDescription object
+	ICECandidate                    // response is a webrtc.IceCandidate object
+)
+
+type WsMessage struct {
+	Status   int             `json:"status"`
+	Type     MessageType     `json:"type"`
+	Response json.RawMessage `json:"response"`
 }
 
-var upgrader = websocket.Upgrader{}
+var stopped chan bool = make(chan bool, 1)
+var remoteSDP chan webrtc.SessionDescription = make(chan webrtc.SessionDescription, 1)
 
+var upgrader = websocket.Upgrader{}
+var incoming chan WsMessage = make(chan WsMessage, 100)
+var outgoing chan WsMessage = make(chan WsMessage, 100)
+
+func read_incoming_messages(sock *websocket.Conn) {
+	for {
+		_, message, err := sock.ReadMessage()
+		if err != nil {
+			panic(err)
+		}
+		parsedMsg := WsMessage{}
+		if err := json.Unmarshal(message, &parsedMsg); err != nil {
+			fmt.Println("Unknown message type received")
+			continue
+		}
+		incoming <- parsedMsg
+	}
+}
+func parse_incoming_messages() {
+	for {
+		parsedMsg := <-incoming
+		switch parsedMsg.Type {
+		case String:
+			var message string
+			if err := json.Unmarshal(parsedMsg.Response, &message); err != nil {
+				fmt.Println("Bad format for string message")
+				return
+			}
+			fmt.Printf("Got string: \"%s\"\n", message)
+		case SDPJson:
+			sdp := webrtc.SessionDescription{}
+			if err := json.Unmarshal(parsedMsg.Response, &sdp); err != nil {
+				fmt.Println("Bad format for sdp message")
+				return
+			}
+			select {
+			case remoteSDP <- sdp:
+			default:
+				fmt.Println("sdp channel is full, currently supports only one client at a time.")
+			}
+		}
+	}
+}
+func write_outgoing_messages(sock *websocket.Conn) {
+	// currently only writes sdp of server
+	for {
+		parsedMsg := <-outgoing
+		json, err := json.Marshal(&parsedMsg)
+		if err != nil {
+			panic(err)
+		}
+		sock.WriteMessage(websocket.TextMessage, json)
+	}
+}
 func start_websocket(c **gin.Context) {
 	sock, err := upgrader.Upgrade((*c).Writer, (*c).Request, nil)
 	if err != nil {
 		panic(err)
 	}
 	defer sock.Close()
-	for {
-		mtype, message, err := sock.ReadMessage()
-		if err != nil {
-			panic(err)
-		}
-		fmt.Println(mtype, message)
-	}
+	go read_incoming_messages(sock)
+	go parse_incoming_messages()
+	go write_outgoing_messages(sock)
+	<-stopped
+
 }
-func new_serve(port string) {
+func serve(port string) {
 	defer func() {
 		stopped <- true
 	}()
@@ -84,6 +116,7 @@ func new_serve(port string) {
 	router.GET("/ws", func(c *gin.Context) {
 		start_websocket(&c)
 	})
+	router.Run(port)
 
 }
 func rtcServer() {
@@ -218,7 +251,11 @@ func start_backend() {
 	// Block until ICE Gathering is complete, disabling trickle ICE
 	<-gatherComplete
 	// set local sdp
-	localSDP = peerConnection.LocalDescription()
+	sdpJson, err := json.Marshal(peerConnection.LocalDescription())
+	if err != nil {
+		panic(err)
+	}
+	outgoing <- WsMessage{OK, SDPJson, sdpJson}
 	// send RTP packets forever
 	vc := make(chan bool, 1)
 	ac := make(chan bool, 1)
