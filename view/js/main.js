@@ -12,7 +12,7 @@ function createRTCConnection(ws) {
         if (event.candidate == null) {
             return;
         }
-        ws.send(JSON.stringify({status: 1, type: 2, response: event.candidate}));
+        ws.send(JSON.stringify({type: 2, status: 1 , response: event.candidate}));
     }
     // create media stream
     const stream = new MediaStream();
@@ -39,7 +39,7 @@ function createRTCConnection(ws) {
         console.log("Clicked button")
         // send offer
         let offer = localConnection.localDescription;
-        ws.send(JSON.stringify({status: 1, type: 1, response: offer}));
+        ws.send(JSON.stringify({type: 1, status: 1, response: offer}));
         console.log("Sent offer");
     });
 }
@@ -47,7 +47,7 @@ window.onload = function() {
     console.log("loaded page");
     
     // create websocket connection 
-    let ws = new WebSocket("ws://localhost:8080/ws?token=ey.wirkstaufmichsowieichaufdich");
+    let ws = new WebSocket("ws://localhost:8080/ws?token=exampletoken");
     ws.onopen = function(evt) {
         console.log("OPEN");
         createRTCConnection(ws);
